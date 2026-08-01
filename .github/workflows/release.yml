@@ -1,0 +1,58 @@
+name: Publish release to PyPI
+
+on:
+  push:
+    tags:
+      - "v[0-9]*"
+
+jobs:
+  publish:
+    name: Build and publish
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/p/hits-to-stts
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        with:
+          version: "0.12.1"
+
+      - name: Install Python
+        run: uv python install
+
+      - name: Verify release version
+        shell: bash
+        run: |
+          if [[ "v$(uv version --short)" != "${GITHUB_REF_NAME}" ]]; then
+            echo "Tag ${GITHUB_REF_NAME} does not match project version v$(uv version --short)."
+            exit 1
+          fi
+
+      - name: Run tests
+        run: uv run --locked python -m unittest discover -s tests
+
+      - name: Build distributions
+        run: uv build --no-sources
+
+      - name: Smoke test wheel
+        run: >-
+          uv run --isolated --no-project --with dist/*.whl
+          python -c "from hits_to_stts import map_tag;
+          assert map_tag('ADJN.Masc.Nom.Sg') == 'ADJA.Nom.Sg.Masc'"
+
+      - name: Smoke test source distribution
+        run: >-
+          uv run --isolated --no-project --with dist/*.tar.gz
+          python -c "from hits_to_stts import map_tag;
+          assert map_tag('ADJN.Masc.Nom.Sg') == 'ADJA.Nom.Sg.Masc'"
+
+      - name: Publish distributions
+        run: uv publish
